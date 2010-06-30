@@ -1,22 +1,47 @@
 
-param ([string] $left, [string] $right = ".", [string] $path = ".");
+param ([string] $left, [string] $right = ".");
 
-    if ($env:USERPROFILE -eq $null) {
-        throw 'Environment variable $env:USERPROFILE is required, as a base path to gitndiff''s working directory.';
+    function getWorkingDirectories {
+
+        if ($env:USERPROFILE -eq $null) {
+            throw 'Environment variable $env:USERPROFILE is required, as a base path to gitndiff''s working directory.';
+        }
+
+        $leftdir = $env:USERPROFILE + '\.gitndiff\left';
+        $rightdir = $env:USERPROFILE + '\.gitndiff\right';
+        
+        if ([System.IO.Directory]::Exists( $leftdir)) {
+            "Deleting directory " + $leftdir
+            remove-item $leftdir -recurse 
+        }
+
+        if ([System.IO.Directory]::Exists( $rightdir)) {
+            "Deleting directory " + $rightdir
+            remove-item $rightdir -recurse
+        }
+
+        return ( $leftdir, $rightdir);
     }
 
-    $leftdir = $env:USERPROFILE + '\.gitndiff\left';
-    $rightdir = $env:USERPROFILE + '\.gitndiff\right';
+    function getRepositoryDirectory() {
+
+        $gitroot = (git rev-parse --git-dir).Replace('/', '\'); 
+        if ($gitroot.LastIndexOf('\') -lt 0) {
+            $gitroot = (get-item .).fullname
+        } else {
+            $gitroot = $gitroot.SubString(0, $gitroot.LastIndexOf('\'));
+        }
+
+        return $gitroot;
+    }
+
+    $gitroot = getRepositoryDirectory;
     
-    if ([System.IO.Directory]::Exists( $leftdir)) {
-        "Deleting directory " + $leftdir
-        remove-item $leftdir -recurse 
-    }
+    "Running git ndiff for repository at $gitroot" | write-host;
 
-    if ([System.IO.Directory]::Exists( $rightdir)) {
-        "Deleting directory " + $rightdir
-        remove-item $rightdir -recurse
-    }
+    $leftdir, $rightdir = getWorkingDirectories;
+
+    "Running with working trees $leftdir and $rightdir" | write-host
 
     if ($left -ne '.')
     {
@@ -25,11 +50,32 @@ param ([string] $left, [string] $right = ".", [string] $path = ".");
 #        (& git checkout $left) | write-host
     }
     
-    $excludedFilenames = (git ls-files -o) | ? { ! $_.Contains( ' ') }
+    $excludedFiles = (git ls-files -o) | 
+        % { $_.Replace( '/', '\') } |
+        % { [System.IO.Path]::Combine( (get-item .).fullname, $_) }
+        ? { [System.IO.File]::Exists( $_ ) -or [System.IO.Directory]::Exists( $_ ) } |
+        % { get-item $_ }
+
+    $includedFiles = gci . * -rec | ? { $excludedFiles -notcontains $_.fullname }
     
-    $exclude = [string]::Join( '+', $excludedFilenames[-3] ).Replace('/', '\')
+    function getCopyTarget( $file, [string] $targetDir ) {
     
-    $exclude
+        $relativePath = getRelativePath($gitroot, $file.fullname);
+    
+        #return [System.IO.Path]::Combine( $targetDir, $relativePath )
+    }
+    
+    foreach ($file in $includedFiles)
+    {
+        getCopyTarget($file, $leftdir);
+        #$relativePath = $getRelativePath(
+    }
+    
+    #get-item $excludedFiles[1] | gm
+    
+    #$exclude = [string]::Join( '+', $excludedFilenames[-3] ).Replace('/', '\')
+    
+    #$exclude
     #(& xcopy $path $leftdir /i /s /y /exclude:"$exclude") | write-host
     
     
