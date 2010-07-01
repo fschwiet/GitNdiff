@@ -1,24 +1,24 @@
 
 param ([string] $left, [string] $right = ".");
 
-function normalizeFilepath( [string] $filepath ) 
+function normalizeFilepath( $file ) 
 {
-    $result = (get-item $filepath).fullname.ToLowerInvariant();
+    $result = $file.fullname.ToLowerInvariant();
     $result = $result.TrimEnd( ( '\' ) );
     return $result;
 }
 
-function getRelativePath( [string] $rootPath, [string] $fullPath) {
+function getRelativePath( $root, $file) {
 
-    $rootPath = normalizeFilepath $rootPath;
+    $rootPath = normalizeFilepath( $root);
     
-    $fullPath = normalizeFilepath( $fullPath);
+    $fullPath = normalizeFilepath( $file);
     
     if (!$fullPath.StartsWith( $rootPath)) {
         throw "$fullPath does not seem rooted by $rootPath.";
     }
         
-    return "." + $fullPath.Substring($rootPath.Length);
+    return $fullPath.Substring($rootPath.Length + 1);
 }
 
 function getWorkingDirectories {
@@ -27,20 +27,31 @@ function getWorkingDirectories {
         throw 'Environment variable $env:USERPROFILE is required, as a base path to gitndiff''s working directory.';
     }
 
-    $leftdir = $env:USERPROFILE + '\.gitndiff\left';
-    $rightdir = $env:USERPROFILE + '\.gitndiff\right';
+    $basedir = $env:USERPROFILE + '\.gitndiff';
+    $leftdir = $basedir + '\left';
+    $rightdir = $basedir + '\right';
     
     if ([System.IO.Directory]::Exists( $leftdir)) {
-        "Deleting directory " + $leftdir
         remove-item $leftdir -recurse 
     }
 
     if ([System.IO.Directory]::Exists( $rightdir)) {
-        "Deleting directory " + $rightdir
         remove-item $rightdir -recurse
     }
+    
+    if (![System.IO.Directory]::Exists($basedir)) {
+        & mkdir $basedir | out-null
+    }
+    
+    if (![System.IO.Directory]::Exists($leftdir)) {
+        & mkdir $leftdir | out-null
+    }
+    
+    if (![System.IO.Directory]::Exists($rightdir)) {
+        & mkdir $rightdir | out-null
+    }
 
-    return ( $leftdir, $rightdir);
+    return ( (get-item $leftdir), (get-item $rightdir));
 }
 
 function getRepositoryDirectory() {
@@ -52,62 +63,83 @@ function getRepositoryDirectory() {
         $gitroot = $gitroot.SubString(0, $gitroot.LastIndexOf('\'));
     }
 
-    return $gitroot;
+    return (get-item $gitroot);
+}
+
+function getFilesToExclude() {
+
+    $excludedFiles = (git ls-files -o) | 
+        % { $_.Replace( '/', '\') } |
+        % { [System.IO.Path]::Combine( (get-item .), $_) }
+        ? { [System.IO.File]::Exists( $_ ) -or [System.IO.Directory]::Exists( $_ ) } |
+        % { get-item $_ }
+
+    return $excludedFiles;
+}
+
+function getFilesToInclude() {
+
+    $excludedFiles = getFilesToExclude
+
+    $includedFiles = gci . * -rec | 
+        ? { $excludedFiles -notcontains $_.fullname } |
+        ? { ! $_.PSIsContainer }
+
+    return $includedFiles;
+}
+
+function copyCurrentDirectoryToRepositoryMirrorAt($targetRoot) {
+
+    $includedFiles = getFilesToInclude
+
+    function copyTarget( [System.IO.FileInfo] $fileToCopy, [System.IO.DirectoryInfo] $targetRoot ) {
+
+        $relativePath = getRelativePath $gitroot $fileToCopy;
+
+        $targetPath = [System.IO.Path]::Combine( $targetRoot.fullname, $relativePath);
+        
+        copy-item $fileToCopy.Directory -filter $fileToCopy.Name -Destination $targetPath
+    }
+
+    foreach ($file in $includedFiles)
+    {
+        copyTarget $file $targetRoot;
+    }
 }
 
 $gitroot = getRepositoryDirectory;
 
 "Running git ndiff for repository at $gitroot" | write-host;
 
-$leftdir, $rightdir = getWorkingDirectories;
+([System.IO.DirectoryInfo] $leftTargetDirectory, [System.IO.DirectoryInfo] $rightTargetDirectory) = getWorkingDirectories;
 
-"Running with working trees $leftdir and $rightdir" | write-host
+"Running with working trees $left and $right" | write-host
 
 if ($left -ne '.')
 {
-#        (& git stash) | write-host
+    (& git stash) | write-host
     
-#        (& git checkout $left) | write-host
+    (& git checkout $left) | write-host
 }
 
-$excludedFiles = (git ls-files -o) | 
-    % { $_.Replace( '/', '\') } |
-    % { [System.IO.Path]::Combine( (get-item .), $_) }
-    ? { [System.IO.File]::Exists( $_ ) -or [System.IO.Directory]::Exists( $_ ) } |
-    % { get-item $_ }
+copyCurrentDirectoryToRepositoryMirrorAt($leftTargetDirectory);
 
-$includedFiles = gci . * -rec | ? { $excludedFiles -notcontains $_.fullname }
-
-function getCopyTarget( $file, [string] $targetDir ) {
-
-$gitroot | write-host;
-$includedFiles | write-host;
-exit;
-
-
-    $relativePath = getRelativePath($gitroot, $file.fullname);
-
-    #return [System.IO.Path]::Combine( $targetDir, $relativePath )
+if ($left -eq '.') {
+    (& git stash) | write-host
 }
 
-foreach ($file in $includedFiles)
-{
-    getCopyTarget($file, $leftdir);
-    #$relativePath = $getRelativePath(
+if ($right -eq '.') { 
+
+    (& git stash pop) | write-host
+} else {
+
+    (& git checkout $right) | write-host
 }
 
-#get-item $excludedFiles[1] | gm
+copyCurrentDirectoryToRepositoryMirrorAt($rightTargetDirectory);
+    
+if ($right -ne '.') { 
+    (& git stash pop) | write-host
+}
 
-#$exclude = [string]::Join( '+', $excludedFilenames[-3] ).Replace('/', '\')
-
-#$exclude
-#(& xcopy $path $leftdir /i /s /y /exclude:"$exclude") | write-host
-
-
-    
-    
-    
-    
-    
-    
-
+& diffmerge $leftTargetDirectory $rightTargetDirectory
