@@ -1,5 +1,5 @@
 
-param ([string] $left, [string] $right = ".");
+param ([string] $left = "head", [string] $right = ".");
 
 function normalizeFilepath( $file ) 
 {
@@ -97,8 +97,9 @@ function copyCurrentDirectoryToRepositoryMirrorAt($targetRoot) {
         $relativePath = getRelativePath $gitroot $fileToCopy;
 
         $targetPath = [System.IO.Path]::Combine( $targetRoot.fullname, $relativePath);
+        $targetPath = $targetPath.SubString(0, $targetPath.LastIndexOf("\"));
         
-        copy-item $fileToCopy.Directory -filter $fileToCopy.Name -Destination $targetPath
+        copy-item $fileToCopy.Directory $targetPath -recurse -force -filter $fileToCopy.Name
     }
 
     foreach ($file in $includedFiles)
