@@ -1,0 +1,3 @@
+﻿only copy files that have changed
+
+new files are being copied in every case since they are not stashed
