@@ -1,4 +1,3 @@
-
 git ndiff left right [ -m, --modified-only ] ->
 
   if (left != '.') {
@@ -7,7 +6,7 @@ git ndiff left right [ -m, --modified-only ] ->
     checkout left
   }
 
-  copy working directory to source directory   
+  copy working directory to left directory   
   
   if (left == '.')
     git stash
@@ -18,7 +17,7 @@ git ndiff left right [ -m, --modified-only ] ->
     checkout right target  
   }
   
-  copy working directory to target directory
+  copy working directory to right directory
 
   if (right != '.')  
     git stash pop  
