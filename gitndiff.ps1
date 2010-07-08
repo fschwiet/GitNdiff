@@ -144,3 +144,8 @@ if ($right -ne '.') {
 }
 
 & diffmerge $leftTargetDirectory $rightTargetDirectory
+
+if ($right -eq '.') { 
+    git stash pop
+}
+

@@ -19,5 +19,7 @@ git ndiff left right [ -m, --modified-only ] ->
   }
   
   copy working directory to target directory
-  
-  
+
+  if (right != '.')  
+    git stash pop  
+
